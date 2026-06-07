@@ -1,0 +1,47 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            },
+            "properties": {
+                "graph_type_row": "graph_size3_id_0_edges_[(0, 1), (0, 2)]",
+                "initB_[]_q_0.5": 1,
+                "initB_[0]_q_0.5": 2,
+                "initB_[1]_q_0.5": 2,
+                "initB_[2]_q_0.5": 2,
+                "initB_[0, 1]_q_0.5": 1,
+                "initB_[0, 2]_q_0.5": 1,
+                "initB_[1, 2]_q_0.5": 2,
+                "initB_[0, 1, 2]_q_0.5": 1
+            }
+        },
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    0.0,
+                    0.0
+                ]
+            },
+            "properties": {
+                "graph_type_row": "graph_size3_id_1_edges_[(0, 1), (0, 2), (1, 2)]",
+                "initB_[]_q_0.5": 1,
+                "initB_[0]_q_0.5": 1,
+                "initB_[1]_q_0.5": 1,
+                "initB_[2]_q_0.5": 1,
+                "initB_[0, 1]_q_0.5": 1,
+                "initB_[0, 2]_q_0.5": 1,
+                "initB_[1, 2]_q_0.5": 1,
+                "initB_[0, 1, 2]_q_0.5": 1
+            }
+        }
+    ]
+}

@@ -1,6 +1,6 @@
 import networkx as nx
 
-class NetworkGame:
+class TPG:
     def __init__(self, graph: nx.Graph, initial_B_nodes: list, q: float):
         """
         Inputs:
@@ -96,30 +96,30 @@ class NetworkGame:
             # 1-Period Equilibrium check
             if current_snapshot == history[-1]:
                 print(f"Static Fixed Point Equilibrium reached at turn {turn-1}!")
-                return "1-period"
+                return 1
                 
             # 2-Period Equilibrium check
             if len(history) >= 2 and current_snapshot == history[-2]:
                 print(f"2-Period Oscillating Equilibrium (Limit Cycle) detected at turn {turn-2}!")
-                return "2-period"
+                return 2
                 
             history.append(current_snapshot)
             
         print("Reached max turns without converging to a 1 or 2 period state.")
-        return "did not converge"
+        return 3
 
 G = nx.Graph()
 
 # Add a bunch of raw nodes without mentioning states
-G.add_nodes_from([1,2])
-G.add_edge(1,2)
+G.add_nodes_from([1,2,3,4,5,6])
+G.add_edges_from([(1,4), (1,6), (2,4), (2,5), (3,4), (3,5), (5,6)])
 
 # Pick which ones should be 'B'
-initial_B = [1]
+initial_B = [4,5,6]
 
 # Assign states automatically based on your list
 for node in G.nodes:
     G.nodes[node]['state'] = 'B' if node in initial_B else 'A'
 
-test = NetworkGame(G, initial_B, 0.1)
+test = TPG(G, initial_B, 0.5)
 test.run_to_equilibrium()
