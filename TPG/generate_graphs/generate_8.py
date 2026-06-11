@@ -10,18 +10,11 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from TPG_script import TPG
+
 def build_geojson_combination_matrix():
     home = os.path.expanduser("~")
     geng_path = os.path.join(home, "GraphTheory-Order8", "bin", "geng")
-
-    order8_graphs = []
-    result = subprocess.run([geng_path, '8', '-c'], capture_output=True, text=True)
-    for line in result.stdout.strip().split('\n'):
-        if line.strip():
-            G = nx.from_graph6_bytes(line.strip().encode())
-            order8_graphs.append(G)
-
-    print(f"Total order-8 graphs: {len(order8_graphs)}")  # Should be 11,117
+    output_file = "tpg_combo_matrix_order8.jsonl"
 
     input_b_states = [
         [], 
@@ -109,44 +102,61 @@ def build_geojson_combination_matrix():
     input_q_values = [1/2, 1/3, 2/3, 1/4, 3/4, 1/5, 2/5, 3/5, 4/5, 1/6, 5/6,
                       1/7, 2/7, 3/7, 4/7, 5/7, 6/7]
 
-    geojson = {
-        "type": "FeatureCollection",
-        "features": []
-    }
+    # Open the streaming file directly in append/write mode
+    with open(output_file, "w") as f_out:
+        # Start geng as a live stream background process
+        process = subprocess.Popen([geng_path, '8', '-c'], stdout=subprocess.PIPE, text=True)
+        
+        index = 0
+        for line in process.stdout:
+            clean_line = line.strip()
+            if not clean_line:
+                continue
+                
+            # Parse only ONE graph topology into active RAM at a time
+            G = nx.from_graph6_bytes(clean_line.encode())
+            edges_string = str(sorted(list(G.edges())))
+            graph_row_id = f"graph_order8_id_{index}_edges_{edges_string}"
 
-    for index, G in enumerate(order8_graphs):
-        edges_string = str(sorted(list(G.edges())))
-        graph_row_id = f"graph_order8_id_{index}_edges_{edges_string}"
+            matrix_properties = {
+                "graph_type_row": graph_row_id
+            }
 
-        matrix_properties = {
-            "graph_type_row": graph_row_id
-        }
+            for b_nodes in input_b_states:
+                valid_b_nodes = [n for n in b_nodes if n in G.nodes()]
+                for q in input_q_values:
+                    column_key = f"initB_{b_nodes}_q_{q}"
+                    
+                    # Compute game matrix permutation state
+                    game = TPG(graph=G, initial_B_nodes=valid_b_nodes, q=q)
+                    result_code = game.run_to_equilibrium()
+                    matrix_properties[column_key] = result_code
 
-        for b_nodes in input_b_states:
-            # Only pass b_nodes that actually exist in this graph (nodes 0-7)
-            valid_b_nodes = [n for n in b_nodes if n in G.nodes()]
-            for q in input_q_values:
-                column_key = f"initB_{b_nodes}_q_{q}"
-                print(f"[RUNNING] Row: {graph_row_id} | Column: {column_key}")
-                game = TPG(graph=G, initial_B_nodes=valid_b_nodes, q=q)
-                result_code = game.run_to_equilibrium()
-                matrix_properties[column_key] = result_code
+            # Package row immediately as a single GeoJSON Feature element line
+            feature = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [0.0, 0.0]
+                },
+                "properties": matrix_properties
+            }
+            
+            # Commit the string line to disk and flush memory immediately
+            f_out.write(json.dumps(feature) + "\n")
+            f_out.flush()
 
-        feature = {
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [0.0, 0.0]
-            },
-            "properties": matrix_properties
-        }
-        geojson["features"].append(feature)
+            # Status check-in every 50 graphs so you can track progress in cluster_run.log
+            if index % 50 == 0:
+                print(f"[STATUS] Successfully processed and saved graph row index: {index} / 11117")
 
-    output_file = "tpg_combo_matrix_order8.geojson"
-    with open(output_file, "w") as f:
-        json.dump(geojson, f, indent=4)
+            index += 1
 
-    print(f"\n{'='*50}\nSuccess! Saved to '{output_file}'")
+        # Safely shut down subprocess streams
+        process.stdout.close()
+        process.wait()
+
+    print(f"\n{'='*50}\nSuccess! Line-delimited matrix safely saved to '{output_file}'")
 
 if __name__ == "__main__":
     build_geojson_combination_matrix()
