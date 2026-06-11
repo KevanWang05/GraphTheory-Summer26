@@ -10,13 +10,12 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from TPG_script import TPG
-
 def build_geojson_combination_matrix():
+    home = os.path.expanduser("~")
+    geng_path = os.path.join(home, "GraphTheory-Order8", "bin", "geng")
 
-    # 1. Collect all connected graphs of order 8
-    # Graph Atlas only goes to 7 nodes, so we use nauty's geng for order 8
     order8_graphs = []
-    result = subprocess.run(['geng', '8', '-c'], capture_output=True, text=True)
+    result = subprocess.run([geng_path, '8', '-c'], capture_output=True, text=True)
     for line in result.stdout.strip().split('\n'):
         if line.strip():
             G = nx.from_graph6_bytes(line.strip().encode())
