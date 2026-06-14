@@ -1,6 +1,8 @@
 # TPG Simulator
 
-A local web app to visualise the Two-Population Game simulation.
+This a web app to simulate the TPG. It's primary use is for people unfamiliar with the game to become familiar.
+
+sigma out
 
 ## Setup
 
