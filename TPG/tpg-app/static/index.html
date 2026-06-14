@@ -127,6 +127,47 @@
     .b-chip { padding: 3px 9px; border-radius: 20px; font-size: 11px; font-family: monospace; border: 1.5px solid var(--border2); background: var(--panel2); color: var(--dim); cursor: pointer; transition: all .12s; user-select: none; }
     .b-chip.selected { background: #111; border-color: #111; color: #fff; }
     .b-chip-empty { font-size: 11px; color: var(--dim); font-style: italic; }
+
+    /* ── Neighbor panel ── */
+    #neighbor-panel {
+      position: absolute;
+      background: var(--panel);
+      border: 1.5px solid var(--border2);
+      border-radius: 10px;
+      padding: 14px;
+      width: 220px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+      z-index: 50;
+      display: none;
+    }
+    #neighbor-panel.visible { display: block; }
+    .np-title {
+      font-size: 12px; font-weight: 600; color: var(--text);
+      margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .np-close {
+      background: none; border: none; cursor: pointer; color: var(--dim);
+      font-size: 16px; line-height: 1; padding: 0 2px;
+    }
+    .np-close:hover { color: var(--text); }
+    .np-sec { font-size: 9px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); margin-bottom: 5px; font-weight: 600; }
+    .np-chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 22px; margin-bottom: 10px; }
+    .np-chip {
+      padding: 2px 8px; border-radius: 20px; font-size: 11px; font-family: monospace;
+      background: var(--panel2); border: 1.5px solid var(--border2); color: var(--text);
+    }
+    .np-chip-empty { font-size: 11px; color: var(--dim); font-style: italic; }
+    .np-input-row { display: flex; gap: 6px; }
+    .np-input-row input[type=text] {
+      flex: 1; padding: 6px 8px; font-size: 12px;
+    }
+    .np-add {
+      padding: 6px 10px; background: var(--accent); color: #fff;
+      border: none; border-radius: var(--r); cursor: pointer; font-size: 12px; font-weight: 600;
+      transition: filter .15s; white-space: nowrap;
+    }
+    .np-add:hover { filter: brightness(1.1); }
+    .np-error { font-size: 10px; color: var(--danger); margin-top: 5px; min-height: 14px; }
   </style>
 </head>
 <body>
@@ -191,6 +232,22 @@
     <p>Select <strong>Node</strong> and click to start building</p>
   </div>
   <div class="mode-pill" id="mode-pill">BUILD</div>
+
+  <!-- Neighbor input panel -->
+  <div id="neighbor-panel">
+    <div class="np-title">
+      <span id="np-node-label">Node —</span>
+      <button class="np-close" id="np-close" title="Close">✕</button>
+    </div>
+    <div class="np-sec">Current neighbours</div>
+    <div class="np-chips" id="np-chips"></div>
+    <div class="np-sec">Add neighbour</div>
+    <div class="np-input-row">
+      <input type="text" id="np-input" placeholder="Node ID" autocomplete="off"/>
+      <button class="np-add" id="np-add">Add</button>
+    </div>
+    <div class="np-error" id="np-error"></div>
+  </div>
 
   <div class="modal-overlay hidden" id="modal">
     <div class="modal">
@@ -291,6 +348,16 @@ const bCount      = $('b-count');
 const eqBadge     = $('eq-badge');
 const qDisplay    = $('q-display');
 
+// Neighbor panel elements
+const neighborPanel  = $('neighbor-panel');
+const npNodeLabel    = $('np-node-label');
+const npChips        = $('np-chips');
+const npInput        = $('np-input');
+const npAdd          = $('np-add');
+const npError        = $('np-error');
+const npClose        = $('np-close');
+let npActiveNode     = null;   // node ID the panel is currently showing
+
 let visNodes = new vis.DataSet();
 let visEdges = new vis.DataSet();
 let network  = null;
@@ -357,14 +424,106 @@ function setTool(tool) {
   network.setOptions({ interaction: { dragNodes: tool === 'cursor' } });
   network.unselectAll();
   deleteBtn.disabled = true;
+  closeNeighborPanel();
 }
 
 toolBtns.forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+
+// ── Neighbor panel ────────────────────────────────────────
+function openNeighborPanel(nodeId, canvasPos) {
+  npActiveNode = nodeId;
+  npNodeLabel.textContent = `Node ${nodeId}`;
+  npError.textContent = '';
+  npInput.value = '';
+  refreshNpChips();
+
+  // Position panel near the clicked node, keeping it inside the canvas
+  const wrap = document.querySelector('.canvas-wrap');
+  const wrapRect = wrap.getBoundingClientRect();
+  const panelW = 220, panelH = 180;
+  let x = canvasPos.x + 20;
+  let y = canvasPos.y - 20;
+  if (x + panelW > wrapRect.width  - 10) x = canvasPos.x - panelW - 10;
+  if (y + panelH > wrapRect.height - 10) y = wrapRect.height - panelH - 10;
+  if (y < 10) y = 10;
+  neighborPanel.style.left = x + 'px';
+  neighborPanel.style.top  = y + 'px';
+  neighborPanel.classList.add('visible');
+  setTimeout(() => npInput.focus(), 50);
+}
+
+function closeNeighborPanel() {
+  neighborPanel.classList.remove('visible');
+  npActiveNode = null;
+  npInput.value = '';
+  npError.textContent = '';
+}
+
+function refreshNpChips() {
+  if (npActiveNode === null) return;
+  const neighbors = network.getConnectedNodes(npActiveNode);
+  npChips.innerHTML = '';
+  if (!neighbors.length) {
+    npChips.innerHTML = '<span class="np-chip-empty">No neighbours yet</span>';
+    return;
+  }
+  neighbors.sort((a,b) => a - b).forEach(nb => {
+    const chip = document.createElement('span');
+    chip.className = 'np-chip';
+    chip.textContent = nb;
+    npChips.appendChild(chip);
+  });
+}
+
+function addNeighborFromPanel() {
+  if (npActiveNode === null) return;
+  const raw = npInput.value.trim();
+  if (!raw) return;
+
+  // Support comma-separated list e.g. "2, 5, 7"
+  const ids = raw.split(',').map(s => s.trim()).filter(Boolean);
+  const errors = [];
+
+  ids.forEach(s => {
+    const target = parseInt(s, 10);
+    if (isNaN(target)) { errors.push(`"${s}" is not a number`); return; }
+    if (!visNodes.get(target)) { errors.push(`Node ${target} doesn't exist`); return; }
+    if (target === npActiveNode) { errors.push(`Can't connect node to itself`); return; }
+    addEdge(npActiveNode, target);   // skips duplicates automatically
+  });
+
+  npError.textContent = errors.length ? errors.join(' · ') : '';
+  npInput.value = '';
+  refreshNpChips();
+  npInput.focus();
+}
+
+npAdd.addEventListener('click', addNeighborFromPanel);
+npInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { addNeighborFromPanel(); e.preventDefault(); }
+  if (e.key === 'Escape') { closeNeighborPanel(); e.preventDefault(); }
+});
+npClose.addEventListener('click', closeNeighborPanel);
+
+// ─────────────────────────────────────────────────────────
 
 function onCanvasClick(params) {
   if (simRunning) return;
   const clicked = params.nodes.length > 0 ? params.nodes[0] : null;
   const clickedEdge = params.edges.length > 0 ? params.edges[0] : null;
+
+  // In cursor mode: clicking a node opens the neighbor panel
+  if (currentTool === 'cursor') {
+    if (clicked !== null) {
+      openNeighborPanel(clicked, params.pointer.DOM);
+    } else {
+      closeNeighborPanel();
+    }
+    return;
+  }
+
+  // Clicking empty canvas while panel is open closes it
+  if (clicked === null && clickedEdge === null) closeNeighborPanel();
 
   if (currentTool === 'node') {
     if (clicked === null && clickedEdge === null) addNodeAt(params.pointer.canvas);
@@ -415,6 +574,8 @@ function addEdge(from, to) {
   if (dup) return;
   visEdges.add({ id: nextEdgeId++, from, to });
   updateInfo();
+  // Keep neighbor panel in sync if it's open for one of these nodes
+  if (npActiveNode === from || npActiveNode === to) refreshNpChips();
 }
 
 function deleteSelected() {
@@ -433,6 +594,11 @@ function deleteSelected() {
   }
   network.unselectAll();
   deleteBtn.disabled = true;
+  // Close panel if its node was deleted, otherwise refresh its chips
+  if (npActiveNode !== null) {
+    if (!visNodes.get(npActiveNode)) closeNeighborPanel();
+    else refreshNpChips();
+  }
   updateInfo(); refreshChips();
 }
 
@@ -470,6 +636,7 @@ modalConfirm.addEventListener('click', () => {
   visNodes.clear(); visEdges.clear();
   nextNodeId = 0; nextEdgeId = 0; edgeFirst = null; pathLast = null;
   initialBSet.clear(); deleteBtn.disabled = true;
+  closeNeighborPanel();
   updateInfo(); refreshChips();
 });
 
@@ -532,6 +699,7 @@ initBtn.addEventListener('click', async () => {
   qInput.classList.remove('error');
   qDisplay.textContent = data.q_display ? `q = ${data.q_display}` : '';
 
+  closeNeighborPanel();
   simRunning = true;
   toolBtns.forEach(b => b.disabled = true);
   clearBtn.disabled = true; deleteBtn.disabled = true;
