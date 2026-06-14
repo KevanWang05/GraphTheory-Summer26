@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TPG Simulator</title>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #e8e8e8;
+      --panel:     #f2f2f2;
+      --panel2:    #e0e0e0;
+      --border:    #c8c8c8;
+      --border2:   #b0b0b0;
+      --text:      #1a1a1a;
+      --dim:       #888;
+      --accent:    #3355cc;
+      --accentbg:  #dde3f8;
+      --danger:    #cc3333;
+      --dangerbg:  #fde8e8;
+      --panel-w:   240px;
+      --r:         8px;
+    }
+
+    html, body { height: 100%; width: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-size: 13px; }
+    body { display: flex; flex-direction: row; }
+
+    .panel { width: var(--panel-w); height: 100vh; background: var(--panel); display: flex; flex-direction: column; padding: 20px 14px; flex-shrink: 0; overflow-y: auto; overflow-x: hidden; }
+    .panel-left  { border-right: 1px solid var(--border); }
+    .panel-right { border-left:  1px solid var(--border); }
+
+    .canvas-wrap { flex: 1; height: 100vh; position: relative; background: var(--bg); min-width: 0; }
+    #network { width: 100%; height: 100%; display: block; }
+
+    .logo { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: .12em; font-family: monospace; }
+    .logo-sub { font-size: 10px; color: var(--dim); letter-spacing: .1em; text-transform: uppercase; margin-top: 1px; display: block; }
+    .panel-header { margin-bottom: 20px; }
+
+    .sec { font-size: 9px; text-transform: uppercase; letter-spacing: .14em; color: var(--dim); margin-bottom: 8px; font-weight: 600; }
+    .divider { height: 1px; background: var(--border); margin: 14px 0; }
+
+    .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+
+    .tool-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 10px 6px; background: var(--panel2); border: 1.5px solid var(--border); border-radius: var(--r);
+      color: var(--dim); cursor: pointer; font-size: 11px; font-family: inherit; transition: all .15s;
+    }
+    .tool-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .tool-btn:hover:not(:disabled) { border-color: var(--border2); color: var(--text); background: #d8d8d8; }
+    .tool-btn.active { background: var(--accentbg); border-color: var(--accent); color: var(--accent); }
+    .tool-btn.tool-danger:hover:not(:disabled) { background: var(--dangerbg); border-color: var(--danger); color: var(--danger); }
+    .tool-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    .hint-box { font-size: 11px; color: var(--dim); background: var(--panel2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; line-height: 1.5; min-height: 36px; }
+
+    .action-btn { display: flex; align-items: center; gap: 7px; padding: 8px 10px; width: 100%; border-radius: var(--r); border: 1.5px solid var(--border); background: var(--panel2); color: var(--dim); font-family: inherit; font-size: 12px; cursor: pointer; transition: all .15s; margin-bottom: 6px; }
+    .action-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .action-btn.danger:hover { border-color: var(--danger); color: var(--danger); background: var(--dangerbg); }
+    .action-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .info-item { background: var(--panel2); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .info-val { font-size: 20px; font-weight: 700; color: var(--text); font-family: monospace; }
+    .info-key { font-size: 9px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+
+    .empty-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; pointer-events: none; transition: opacity .3s; }
+    .empty-msg.hidden { opacity: 0; }
+    .empty-icon { font-size: 48px; color: var(--border2); }
+    .empty-msg p { font-size: 13px; color: var(--dim); }
+    .empty-msg strong { color: var(--text); }
+
+    .mode-pill { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border2); border-radius: 20px; padding: 4px 14px; font-family: monospace; font-size: 10px; letter-spacing: .14em; color: var(--dim); pointer-events: none; }
+    .mode-pill.sim { color: var(--accent); border-color: var(--accent); }
+
+    .field { margin-bottom: 14px; }
+    .field-label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); margin-bottom: 6px; font-weight: 500; }
+    .field-hint { display: block; font-size: 10px; color: var(--dim); margin-top: 4px; }
+    .field-error { display: block; font-size: 10px; color: var(--danger); margin-top: 4px; min-height: 14px; }
+
+    .speed-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 10px; color: var(--dim); }
+    .speed-row input { flex: 1; }
+
+    input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 3px; background: var(--border2); border-radius: 2px; cursor: pointer; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+
+    input[type=text] { width: 100%; background: var(--panel2); border: 1.5px solid var(--border); border-radius: var(--r); color: var(--text); font-family: monospace; font-size: 13px; padding: 7px 9px; outline: none; transition: border-color .15s; }
+    input[type=text]:focus { border-color: var(--accent); }
+    input[type=text].error { border-color: var(--danger); }
+
+    .btn { display: block; width: 100%; border: none; border-radius: var(--r); font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; padding: 9px 14px; text-align: center; transition: all .15s; margin-bottom: 6px; }
+    .btn:disabled { opacity: .3; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+    .btn-ghost { background: transparent; border: 1.5px solid var(--border2); color: var(--dim); }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-secondary { background: var(--panel2); border: 1.5px solid var(--border); color: var(--text); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--border2); }
+
+    .playback-row { display: flex; gap: 6px; }
+    .playback-row .btn { margin-bottom: 0; }
+
+    .stats { display: flex; flex-direction: column; gap: 6px; }
+    .stat { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel2); border-radius: var(--r); border: 1px solid var(--border); }
+    .stat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--border2); }
+    .stat-label { flex: 1; font-size: 11px; color: var(--dim); }
+    .stat-val { font-family: monospace; font-size: 15px; font-weight: 700; }
+
+    .q-display { font-size: 11px; color: var(--dim); margin-top: 4px; font-family: monospace; min-height: 14px; }
+
+    .eq-badge { margin-top: 12px; padding: 10px 12px; border-radius: var(--r); font-size: 11px; text-align: center; font-weight: 600; text-transform: uppercase; line-height: 1.4; }
+    .eq-badge.fixed { background: #e8f5e9; color: #2e7d32; border: 1px solid #2e7d32; }
+    .eq-badge.cycle { background: #fff8e1; color: #b8860b; border: 1px solid #b8860b; }
+    .eq-badge.hidden { display: none; }
+
+    .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal-overlay.hidden { display: none; }
+    .modal { background: var(--panel); border: 1px solid var(--border2); border-radius: 12px; padding: 24px; width: 290px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+    .modal-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+    .modal-body { font-size: 12px; color: var(--dim); line-height: 1.6; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-actions .btn { width: auto; margin: 0; padding: 8px 16px; }
+
+    .b-chip-list { display: flex; flex-wrap: wrap; gap: 5px; max-height: 80px; overflow-y: auto; margin-top: 4px; }
+    .b-chip { padding: 3px 9px; border-radius: 20px; font-size: 11px; font-family: monospace; border: 1.5px solid var(--border2); background: var(--panel2); color: var(--dim); cursor: pointer; transition: all .12s; user-select: none; }
+    .b-chip.selected { background: #111; border-color: #111; color: #fff; }
+    .b-chip-empty { font-size: 11px; color: var(--dim); font-style: italic; }
+  </style>
+</head>
+<body>
+
+<!-- LEFT PANEL -->
+<aside class="panel panel-left">
+  <div class="panel-header">
+    <span class="logo">TPG</span>
+    <span class="logo-sub">Graph Builder</span>
+  </div>
+
+  <div class="sec">Tool</div>
+  <div class="tool-grid">
+    <button class="tool-btn active" data-tool="cursor">
+      <svg viewBox="0 0 24 24"><path d="M4 2l16 10-7 1-4 7z" stroke-linejoin="round"/></svg>
+      <span>Cursor</span>
+    </button>
+    <button class="tool-btn" data-tool="node">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/></svg>
+      <span>Node</span>
+    </button>
+    <button class="tool-btn" data-tool="edge">
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="19" r="3"/><circle cx="19" cy="5" r="3"/><line x1="7.5" y1="16.5" x2="16.5" y2="7.5"/></svg>
+      <span>Edge</span>
+    </button>
+    <button class="tool-btn" data-tool="path">
+      <svg viewBox="0 0 24 24"><circle cx="4" cy="12" r="2.5"/><circle cx="12" cy="5" r="2.5"/><circle cx="20" cy="12" r="2.5"/><polyline points="4,12 12,5 20,12"/></svg>
+      <span>Path</span>
+    </button>
+    <button class="tool-btn" data-tool="bselect" style="grid-column: span 2;">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" stroke="none" fill="currentColor">B</text></svg>
+      <span>Set Initial B</span>
+    </button>
+  </div>
+
+  <div class="hint-box" id="tool-hint">Drag nodes to reposition them.</div>
+
+  <div class="divider"></div>
+  <div class="sec">Edit</div>
+  <button class="action-btn danger" id="delete-btn" disabled>
+    <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+    Delete selected
+  </button>
+  <button class="action-btn danger" id="clear-btn">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+    Clear all
+  </button>
+
+  <div class="divider"></div>
+  <div class="sec">Graph info</div>
+  <div class="info-grid">
+    <div class="info-item"><span class="info-val" id="node-count">0</span><span class="info-key">nodes</span></div>
+    <div class="info-item"><span class="info-val" id="edge-count">0</span><span class="info-key">edges</span></div>
+  </div>
+</aside>
+
+<!-- CANVAS -->
+<main class="canvas-wrap">
+  <div id="network"></div>
+  <div class="empty-msg" id="canvas-empty">
+    <div class="empty-icon">⬡</div>
+    <p>Select <strong>Node</strong> and click to start building</p>
+  </div>
+  <div class="mode-pill" id="mode-pill">BUILD</div>
+
+  <div class="modal-overlay hidden" id="modal">
+    <div class="modal">
+      <div class="modal-title">Clear the graph?</div>
+      <div class="modal-body">This will remove all nodes and edges. This can't be undone.</div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+        <button class="btn" style="background:var(--danger);color:#fff;" id="modal-confirm">Clear all</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- RIGHT PANEL -->
+<aside class="panel panel-right">
+  <div class="panel-header">
+    <span class="logo">SIM</span>
+    <span class="logo-sub">Simulation</span>
+  </div>
+
+  <div class="sec">Parameters</div>
+
+  <div class="field">
+    <label class="field-label">q value</label>
+    <input type="text" id="q-input" value="1/2" placeholder="e.g. 0.5 or 1/3" spellcheck="false"/>
+    <span class="field-hint">Decimals or fractions (e.g. 1/3, 2/5)</span>
+    <span class="field-error" id="q-error"></span>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Initial B nodes</label>
+    <div class="b-chip-list" id="b-chip-list">
+      <span class="b-chip-empty">No nodes yet</span>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="init-btn">Run simulation</button>
+  <button class="btn btn-ghost" id="reset-btn" style="display:none">← Back to builder</button>
+
+  <div class="divider"></div>
+  <div class="sec">Playback</div>
+  <div class="playback-row">
+    <button class="btn btn-secondary" id="step-btn" disabled>Step →</button>
+    <button class="btn btn-secondary" id="play-btn" disabled>▶ Play</button>
+  </div>
+  <div class="speed-row">
+    <span>Fast</span>
+    <input type="range" id="speed-slider" min="100" max="2000" step="100" value="600"/>
+    <span>Slow</span>
+  </div>
+
+  <div class="divider"></div>
+  <div class="sec">State</div>
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Turn</span>
+      <span class="stat-val" id="turn-val">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-dot" style="background:#fff;border-color:#222"></span>
+      <span class="stat-label">State A</span>
+      <span class="stat-val" id="a-count">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-dot" style="background:#111;border-color:#000"></span>
+      <span class="stat-label">State B</span>
+      <span class="stat-val" id="b-count">—</span>
+    </div>
+  </div>
+  <div class="q-display" id="q-display"></div>
+  <div class="eq-badge hidden" id="eq-badge"></div>
+</aside>
+
+<script>
+const $ = id => document.getElementById(id);
+const toolBtns    = document.querySelectorAll('.tool-btn');
+const toolHint    = $('tool-hint');
+const deleteBtn   = $('delete-btn');
+const clearBtn    = $('clear-btn');
+const modal       = $('modal');
+const modalCancel = $('modal-cancel');
+const modalConfirm= $('modal-confirm');
+const nodeCountEl = $('node-count');
+const edgeCountEl = $('edge-count');
+const canvasEmpty = $('canvas-empty');
+const modePill    = $('mode-pill');
+const qInput      = $('q-input');
+const qError      = $('q-error');
+const bChipList   = $('b-chip-list');
+const initBtn     = $('init-btn');
+const resetBtn    = $('reset-btn');
+const stepBtn     = $('step-btn');
+const playBtn     = $('play-btn');
+const speedSlider = $('speed-slider');
+const turnVal     = $('turn-val');
+const aCount      = $('a-count');
+const bCount      = $('b-count');
+const eqBadge     = $('eq-badge');
+const qDisplay    = $('q-display');
+
+let visNodes = new vis.DataSet();
+let visEdges = new vis.DataSet();
+let network  = null;
+
+let currentTool  = 'cursor';
+let nextNodeId   = 0;
+let nextEdgeId   = 0;
+let edgeFirst    = null;
+let pathLast     = null;
+let simRunning   = false;
+let playing      = false;
+let playInterval = null;
+let initialBSet  = new Set();
+
+const COLOR = {
+  A:        { background: '#ffffff', border: '#222222', highlight: { background: '#f0f0f0', border: '#000000' } },
+  B:        { background: '#111111', border: '#000000', highlight: { background: '#333333', border: '#000000' } },
+  EDGE_SEL: { background: '#3355cc', border: '#1133aa', highlight: { background: '#5577ee', border: '#1133aa' } },
+};
+
+const HINTS = {
+  cursor:  'Click to select nodes/edges. Drag to move nodes.',
+  node:    'Click empty canvas to place a node.',
+  edge:    'Click a source node, then click the target to connect.',
+  path:    'Click to extend the path. Press Esc to finish.',
+  bselect: 'Click a node to toggle it as initial B (black) or A (white).',
+};
+
+function nodeColor(id) {
+  return initialBSet.has(id) ? COLOR.B : COLOR.A;
+}
+
+function buildNetwork() {
+  network = new vis.Network(
+    document.getElementById('network'),
+    { nodes: visNodes, edges: visEdges },
+    {
+      physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -55, springLength: 100 }, stabilization: { iterations: 150 } },
+      edges: { color: { color: '#999999', highlight: '#3355cc', hover: '#777777' }, width: 2, smooth: { type: 'continuous' }, selectionWidth: 3 },
+      nodes: { shape: 'dot', size: 20, font: { color: '#444444', size: 13, face: 'monospace', bold: true }, borderWidth: 2.5, shadow: { enabled: true, color: 'rgba(0,0,0,0.15)', size: 6, x: 0, y: 2 } },
+      interaction: { hover: true, dragView: true, zoomView: true, dragNodes: true, selectConnectedEdges: false, multiselect: true },
+    }
+  );
+  network.on('click', onCanvasClick);
+  network.on('select', onSelection);
+  network.on('deselectNode', onSelection);
+  network.on('deselectEdge', onSelection);
+}
+
+function onSelection() {
+  if (simRunning) return;
+  const sel = network.getSelection();
+  const hasSelection = sel.nodes.length > 0 || sel.edges.length > 0;
+  deleteBtn.disabled = !hasSelection;
+}
+
+function setTool(tool) {
+  if (simRunning) return;
+  currentTool = tool;
+  toolBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+  toolHint.textContent = HINTS[tool];
+  if (edgeFirst !== null) { visNodes.update({ id: edgeFirst, color: nodeColor(edgeFirst) }); edgeFirst = null; }
+  pathLast = null;
+  network.setOptions({ interaction: { dragNodes: tool === 'cursor' } });
+  network.unselectAll();
+  deleteBtn.disabled = true;
+}
+
+toolBtns.forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+
+function onCanvasClick(params) {
+  if (simRunning) return;
+  const clicked = params.nodes.length > 0 ? params.nodes[0] : null;
+  const clickedEdge = params.edges.length > 0 ? params.edges[0] : null;
+
+  if (currentTool === 'node') {
+    if (clicked === null && clickedEdge === null) addNodeAt(params.pointer.canvas);
+
+  } else if (currentTool === 'bselect') {
+    if (clicked === null) return;
+    if (initialBSet.has(clicked)) { initialBSet.delete(clicked); } else { initialBSet.add(clicked); }
+    visNodes.update({ id: clicked, color: nodeColor(clicked) });
+    network.unselectAll();
+    refreshChips();
+
+  } else if (currentTool === 'edge') {
+    if (clicked === null) return;
+    if (edgeFirst === null) {
+      edgeFirst = clicked;
+      visNodes.update({ id: clicked, color: COLOR.EDGE_SEL });
+      toolHint.textContent = `Node ${clicked} selected — click target.`;
+    } else {
+      if (clicked !== edgeFirst) addEdge(edgeFirst, clicked);
+      visNodes.update({ id: edgeFirst, color: nodeColor(edgeFirst) });
+      edgeFirst = null;
+      toolHint.textContent = HINTS.edge;
+    }
+
+  } else if (currentTool === 'path') {
+    if (clicked === null && clickedEdge === null) {
+      const newId = addNodeAt(params.pointer.canvas);
+      if (pathLast !== null) addEdge(pathLast, newId);
+      pathLast = newId;
+      toolHint.textContent = `Path … → ${newId}. Click to extend, Esc to finish.`;
+    } else if (clicked !== null) {
+      if (pathLast !== null && clicked !== pathLast) addEdge(pathLast, clicked);
+      pathLast = clicked;
+      toolHint.textContent = `Path … → ${clicked}. Click to extend, Esc to finish.`;
+    }
+  }
+}
+
+function addNodeAt(pos) {
+  const id = nextNodeId++;
+  visNodes.add({ id, label: String(id), x: pos.x, y: pos.y, color: COLOR.A });
+  updateInfo(); refreshChips();
+  return id;
+}
+
+function addEdge(from, to) {
+  const dup = visEdges.get().find(e => (e.from===from&&e.to===to)||(e.from===to&&e.to===from));
+  if (dup) return;
+  visEdges.add({ id: nextEdgeId++, from, to });
+  updateInfo();
+}
+
+function deleteSelected() {
+  if (simRunning) return;
+  const sel = network.getSelection();
+  // Delete selected edges
+  if (sel.edges.length) visEdges.remove(sel.edges);
+  // Delete selected nodes and all their connected edges
+  if (sel.nodes.length) {
+    sel.nodes.forEach(nid => {
+      const connected = network.getConnectedEdges(nid);
+      visEdges.remove(connected);
+      initialBSet.delete(nid);
+    });
+    visNodes.remove(sel.nodes);
+  }
+  network.unselectAll();
+  deleteBtn.disabled = true;
+  updateInfo(); refreshChips();
+}
+
+deleteBtn.addEventListener('click', deleteSelected);
+
+function updateInfo() {
+  nodeCountEl.textContent = visNodes.length;
+  edgeCountEl.textContent = visEdges.length;
+  canvasEmpty.classList.toggle('hidden', visNodes.length > 0);
+}
+
+function refreshChips() {
+  const ids = visNodes.getIds().sort((a,b) => a - b);
+  if (!ids.length) { bChipList.innerHTML = '<span class="b-chip-empty">No nodes yet</span>'; return; }
+  bChipList.innerHTML = '';
+  ids.forEach(id => {
+    const chip = document.createElement('span');
+    chip.className = 'b-chip' + (initialBSet.has(id) ? ' selected' : '');
+    chip.textContent = id;
+    chip.title = initialBSet.has(id) ? 'Click to set A' : 'Click to set B';
+    chip.addEventListener('click', () => {
+      if (simRunning) return;
+      if (initialBSet.has(id)) { initialBSet.delete(id); } else { initialBSet.add(id); }
+      visNodes.update({ id, color: nodeColor(id) });
+      refreshChips();
+    });
+    bChipList.appendChild(chip);
+  });
+}
+
+clearBtn.addEventListener('click', () => modal.classList.remove('hidden'));
+modalCancel.addEventListener('click', () => modal.classList.add('hidden'));
+modalConfirm.addEventListener('click', () => {
+  modal.classList.add('hidden');
+  visNodes.clear(); visEdges.clear();
+  nextNodeId = 0; nextEdgeId = 0; edgeFirst = null; pathLast = null;
+  initialBSet.clear(); deleteBtn.disabled = true;
+  updateInfo(); refreshChips();
+});
+
+// Keyboard: Backspace/Delete removes selection in build mode
+document.addEventListener('keydown', e => {
+  // Don't fire when typing in an input
+  if (e.target.tagName === 'INPUT') return;
+
+  if ((e.key === 'Backspace' || e.key === 'Delete') && !simRunning) {
+    deleteSelected(); return;
+  }
+  if (e.key === 'Escape') {
+    if (!modal.classList.contains('hidden')) { modal.classList.add('hidden'); return; }
+    pathLast = null;
+    if (currentTool === 'path') toolHint.textContent = HINTS.path;
+    if (edgeFirst !== null) {
+      visNodes.update({ id: edgeFirst, color: nodeColor(edgeFirst) });
+      edgeFirst = null; toolHint.textContent = HINTS.edge;
+    }
+  }
+});
+
+// q validation on input
+function parseQ(val) {
+  // Accept "1/3", "0.5", ".5", "1" etc.
+  val = val.trim();
+  if (/^-?\d+(\.\d*)?\/?(\d+(\.\d*)?)?$/.test(val) || val.includes('/')) {
+    return val; // let python validate
+  }
+  return null;
+}
+
+qInput.addEventListener('input', () => {
+  const v = qInput.value.trim();
+  if (!v) { qError.textContent = ''; qInput.classList.remove('error'); return; }
+  // basic client-side preview
+  let ok = /^(\d+(\.\d*)?|\.\d+)(\/(\d+(\.\d*)?|\.\d+))?$/.test(v);
+  qInput.classList.toggle('error', !ok);
+  qError.textContent = ok ? '' : 'Enter a decimal (0.5) or fraction (1/3)';
+});
+
+initBtn.addEventListener('click', async () => {
+  const nodes = visNodes.get().map(n => n.id);
+  const edges = visEdges.get().map(e => [e.from, e.to]);
+  if (!nodes.length) { alert('Add at least one node first.'); return; }
+
+  const qRaw = qInput.value.trim();
+  if (!qRaw) { qError.textContent = 'Please enter a q value.'; return; }
+
+  const initial_b = [...initialBSet];
+
+  const res = await fetch('/init', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodes, edges, q: qRaw, initial_b }),
+  });
+  const data = await res.json();
+  if (!res.ok) { qError.textContent = data.error; qInput.classList.add('error'); return; }
+
+  qError.textContent = '';
+  qInput.classList.remove('error');
+  qDisplay.textContent = data.q_display ? `q = ${data.q_display}` : '';
+
+  simRunning = true;
+  toolBtns.forEach(b => b.disabled = true);
+  clearBtn.disabled = true; deleteBtn.disabled = true;
+  network.setOptions({ interaction: { dragNodes: false } });
+  modePill.textContent = 'SIMULATION'; modePill.classList.add('sim');
+  initBtn.style.display = 'none'; resetBtn.style.display = 'block';
+  stepBtn.disabled = false; playBtn.disabled = false;
+  eqBadge.className = 'eq-badge hidden';
+  renderStates(data); updateStats(data);
+});
+
+resetBtn.addEventListener('click', () => {
+  stopPlay(); simRunning = false;
+  toolBtns.forEach(b => b.disabled = false);
+  clearBtn.disabled = false;
+  network.setOptions({ interaction: { dragNodes: currentTool === 'cursor' } });
+  modePill.textContent = 'BUILD'; modePill.classList.remove('sim');
+  initBtn.style.display = 'block'; resetBtn.style.display = 'none';
+  stepBtn.disabled = true; playBtn.disabled = true;
+  eqBadge.className = 'eq-badge hidden';
+  turnVal.textContent = aCount.textContent = bCount.textContent = '—';
+  qDisplay.textContent = '';
+  visNodes.get().forEach(n => visNodes.update({ id: n.id, color: nodeColor(n.id) }));
+});
+
+function renderStates(data) {
+  data.nodes.forEach(n => visNodes.update({ id: n.id, color: COLOR[n.state] }));
+}
+
+function updateStats(data) {
+  turnVal.textContent = data.turn;
+  aCount.textContent  = data.a_count;
+  bCount.textContent  = data.b_count;
+  if (data.equilibrium === 'fixed') {
+    eqBadge.textContent = '✓ Fixed point'; eqBadge.className = 'eq-badge fixed'; stopPlay();
+  } else if (data.equilibrium === 'cycle') {
+    eqBadge.textContent = '⟳ 2-period cycle'; eqBadge.className = 'eq-badge cycle'; stopPlay();
+  } else {
+    eqBadge.className = 'eq-badge hidden';
+  }
+}
+
+async function doStep() {
+  const res = await fetch('/step', { method: 'POST' });
+  if (!res.ok) return null;
+  const data = await res.json();
+  renderStates(data); updateStats(data);
+  return data;
+}
+
+stepBtn.addEventListener('click', doStep);
+
+function startPlay() {
+  playing = true; playBtn.textContent = '⏹ Stop';
+  playInterval = setInterval(async () => {
+    const data = await doStep();
+    if (!data || data.equilibrium) stopPlay();
+  }, parseInt(speedSlider.value));
+}
+function stopPlay() {
+  playing = false; clearInterval(playInterval); playBtn.textContent = '▶ Play';
+}
+
+playBtn.addEventListener('click', () => playing ? stopPlay() : startPlay());
+speedSlider.addEventListener('input', () => { if (playing) { stopPlay(); startPlay(); } });
+
+buildNetwork();
+updateInfo();
+refreshChips();
+</script>
+</body>
+</html>
