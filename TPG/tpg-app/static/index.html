@@ -205,6 +205,11 @@
 
   <div class="hint-box" id="tool-hint">Drag nodes to reposition them.</div>
 
+  <button class="action-btn" id="physics-toggle-btn" title="Toggle whether nodes pull toward each other">
+    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="7.05" y2="7.05"/><line x1="16.95" y1="16.95" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="16.95" y2="7.05"/><line x1="7.05" y1="16.95" x2="4.93" y2="19.07"/></svg>
+    <span id="physics-toggle-label">Physics: On</span>
+  </button>
+
   <div class="divider"></div>
   <div class="sec">Edit</div>
   <button class="action-btn danger" id="delete-btn" disabled>
@@ -325,8 +330,10 @@
 const $ = id => document.getElementById(id);
 const toolBtns    = document.querySelectorAll('.tool-btn');
 const toolHint    = $('tool-hint');
-const deleteBtn   = $('delete-btn');
-const clearBtn    = $('clear-btn');
+const deleteBtn         = $('delete-btn');
+const clearBtn          = $('clear-btn');
+const physicsToggleBtn  = $('physics-toggle-btn');
+const physicsToggleLbl  = $('physics-toggle-label');
 const modal       = $('modal');
 const modalCancel = $('modal-cancel');
 const modalConfirm= $('modal-confirm');
@@ -371,6 +378,7 @@ let simRunning   = false;
 let playing      = false;
 let playInterval = null;
 let initialBSet  = new Set();
+let physicsEnabled = true;
 
 const COLOR = {
   A:        { background: '#ffffff', border: '#222222', highlight: { background: '#f0f0f0', border: '#000000' } },
@@ -405,6 +413,21 @@ function buildNetwork() {
   network.on('select', onSelection);
   network.on('deselectNode', onSelection);
   network.on('deselectEdge', onSelection);
+
+  // Allow dragging nodes even when physics is off (fixed nodes block dragging)
+  network.on('dragStart', params => {
+    if (!physicsEnabled && params.nodes.length > 0) {
+      params.nodes.forEach(id => visNodes.update({ id, fixed: false }));
+    }
+  });
+  network.on('dragEnd', params => {
+    if (!physicsEnabled && params.nodes.length > 0) {
+      params.nodes.forEach(id => {
+        const pos = network.getPosition(id);
+        visNodes.update({ id, x: pos.x, y: pos.y, fixed: { x: true, y: true } });
+      });
+    }
+  });
 }
 
 function onSelection() {
@@ -429,7 +452,34 @@ function setTool(tool) {
 
 toolBtns.forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
 
-// ── Neighbor panel ────────────────────────────────────────
+// ── Physics toggle ─────────────────────────────────────────
+function setPhysics(enabled) {
+  physicsEnabled = enabled;
+  if (enabled) {
+    // Unfix all nodes so physics can move them again
+    visNodes.get().forEach(n => {
+      visNodes.update({ id: n.id, fixed: false });
+    });
+    network.setOptions({ physics: { enabled: true } });
+    physicsToggleLbl.textContent = 'Physics: On';
+    physicsToggleBtn.classList.remove('active');
+  } else {
+    // Freeze nodes in their current positions before disabling physics
+    visNodes.get().forEach(n => {
+      const pos = network.getPosition(n.id);
+      visNodes.update({ id: n.id, x: pos.x, y: pos.y, fixed: { x: true, y: true } });
+    });
+    network.setOptions({ physics: { enabled: false } });
+    physicsToggleLbl.textContent = 'Physics: Off';
+    physicsToggleBtn.classList.add('active');
+  }
+}
+
+physicsToggleBtn.addEventListener('click', () => {
+  if (simRunning) return;
+  setPhysics(!physicsEnabled);
+});
+
 function openNeighborPanel(nodeId, canvasPos) {
   npActiveNode = nodeId;
   npNodeLabel.textContent = `Node ${nodeId}`;
@@ -564,7 +614,7 @@ function onCanvasClick(params) {
 
 function addNodeAt(pos) {
   const id = nextNodeId++;
-  visNodes.add({ id, label: String(id), x: pos.x, y: pos.y, color: COLOR.A });
+  visNodes.add({ id, label: String(id), x: pos.x, y: pos.y, color: COLOR.A, fixed: !physicsEnabled ? { x: true, y: true } : false });
   updateInfo(); refreshChips();
   return id;
 }
@@ -702,7 +752,7 @@ initBtn.addEventListener('click', async () => {
   closeNeighborPanel();
   simRunning = true;
   toolBtns.forEach(b => b.disabled = true);
-  clearBtn.disabled = true; deleteBtn.disabled = true;
+  clearBtn.disabled = true; deleteBtn.disabled = true; physicsToggleBtn.disabled = true;
   network.setOptions({ interaction: { dragNodes: false } });
   modePill.textContent = 'SIMULATION'; modePill.classList.add('sim');
   initBtn.style.display = 'none'; resetBtn.style.display = 'block';
@@ -714,7 +764,7 @@ initBtn.addEventListener('click', async () => {
 resetBtn.addEventListener('click', () => {
   stopPlay(); simRunning = false;
   toolBtns.forEach(b => b.disabled = false);
-  clearBtn.disabled = false;
+  clearBtn.disabled = false; physicsToggleBtn.disabled = false;
   network.setOptions({ interaction: { dragNodes: currentTool === 'cursor' } });
   modePill.textContent = 'BUILD'; modePill.classList.remove('sim');
   initBtn.style.display = 'block'; resetBtn.style.display = 'none';

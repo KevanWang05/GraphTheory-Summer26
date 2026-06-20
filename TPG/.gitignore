@@ -1,3 +1,5 @@
 # Ignore Python compiled bytecode cache
 __pycache__/
 *.pyc
+epic_graph.jpg
+cool_construction.jpg
