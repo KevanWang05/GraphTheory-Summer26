@@ -50,7 +50,12 @@ const COLOR = {
   B: { background: '#f87171', border: '#ef4444', highlight: { background: '#fca5a5', border: '#ef4444' } },
   DEFAULT: { background: '#6c8fff', border: '#3b6bff', highlight: { background: '#8aa5ff', border: '#3b6bff' } },
   SELECTED: { background: '#e8c347', border: '#ca9a00', highlight: { background: '#f0d070', border: '#ca9a00' } },
+  NEIGHBOR_B: { background: '#111114', border: '#000000', highlight: { background: '#222226', border: '#000000' } },
 };
+
+/* ── Sim-mode node inspection state ─────────────────────────── */
+let lastSimData     = null;  // most recent /init or /step payload
+let inspectedNode   = null;  // id of node currently selected for neighbor inspection
 
 const HINTS = {
   cursor: 'Click and drag to move nodes.',
@@ -125,7 +130,17 @@ toolBtns.forEach(btn => btn.addEventListener('click', () => setTool(btn.dataset.
 
 /* ── Canvas click handler ────────────────────────────────── */
 function onCanvasClick(params) {
-  if (simRunning) return;
+  if (simRunning) {
+    const clickedNodeId = params.nodes.length > 0 ? params.nodes[0] : null;
+    if (clickedNodeId === null) {
+      clearInspection();
+    } else if (clickedNodeId === inspectedNode) {
+      clearInspection();
+    } else {
+      inspectNode(clickedNodeId);
+    }
+    return;
+  }
 
   const clickedNodeId = params.nodes.length > 0 ? params.nodes[0] : null;
 
@@ -168,7 +183,42 @@ function onCanvasClick(params) {
   }
 }
 
-/* ── Add node ─────────────────────────────────────────────── */
+/* ── Neighbor inspection (sim mode) ──────────────────────── */
+function getNeighborIds(nodeId) {
+  const ids = new Set();
+  visEdges.get().forEach(e => {
+    if (e.from === nodeId) ids.add(e.to);
+    else if (e.to === nodeId) ids.add(e.from);
+  });
+  return [...ids];
+}
+
+function inspectNode(nodeId) {
+  // Restore previous colours before applying new highlight
+  if (lastSimData) renderStates(lastSimData);
+
+  inspectedNode = nodeId;
+  visNodes.update({ id: nodeId, color: COLOR.SELECTED });
+
+  const stateById = {};
+  if (lastSimData) lastSimData.nodes.forEach(n => { stateById[n.id] = n.state; });
+
+  getNeighborIds(nodeId).forEach(nid => {
+    if (stateById[nid] === 'B') {
+      visNodes.update({ id: nid, color: COLOR.NEIGHBOR_B });
+    }
+  });
+
+  toolHint.textContent = `Node ${nodeId} selected — neighbors in state B are highlighted black. Click empty space or the node again to clear.`;
+}
+
+function clearInspection() {
+  inspectedNode = null;
+  if (lastSimData) renderStates(lastSimData);
+  toolHint.textContent = 'Click a node to inspect its neighbors in state B.';
+}
+
+
 function addNodeAt(pos) {
   const id = nextNodeId++;
   visNodes.add({ id, label: String(id), x: pos.x, y: pos.y, color: COLOR.DEFAULT });
@@ -213,6 +263,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (modal && !modal.classList.contains('hidden')) {
       modal.classList.add('hidden'); return;
+    }
+    if (simRunning) {
+      clearInspection();
+      return;
     }
     pathLastNode = null;
     if (currentTool === 'path') toolHint.textContent = HINTS.path;
@@ -261,6 +315,8 @@ initBtn.addEventListener('click', async () => {
   stepBtn.disabled = false;
   playBtn.disabled = false;
   eqBadge.className = 'eq-badge hidden';
+  inspectedNode = null;
+  toolHint.textContent = 'Click a node to inspect its neighbors in state B.';
 
   renderStates(data);
   updateStats(data);
@@ -270,6 +326,8 @@ initBtn.addEventListener('click', async () => {
 resetBtn.addEventListener('click', () => {
   stopPlay();
   simRunning = false;
+  inspectedNode = null;
+  lastSimData = null;
   toolBtns.forEach(b => b.disabled = false);
   clearBtn.disabled = false;
   network.setOptions({ interaction: { dragNodes: currentTool === 'cursor' } });
@@ -289,6 +347,7 @@ resetBtn.addEventListener('click', () => {
 
 /* ── Render node states from API ─────────────────────────── */
 function renderStates(data) {
+  lastSimData = data;
   data.nodes.forEach(n => {
     visNodes.update({ id: n.id, color: COLOR[n.state] });
   });
@@ -319,6 +378,7 @@ async function doStep() {
   const data = await res.json();
   renderStates(data);
   updateStats(data);
+  if (inspectedNode !== null) inspectNode(inspectedNode);
   return data;
 }
 

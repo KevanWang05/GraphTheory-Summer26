@@ -155,7 +155,11 @@
     .np-chip {
       padding: 2px 8px; border-radius: 20px; font-size: 11px; font-family: monospace;
       background: var(--panel2); border: 1.5px solid var(--border2); color: var(--text);
+      cursor: pointer; transition: all .12s; user-select: none;
     }
+    .np-chip:hover { text-decoration: line-through; opacity: 0.65; }
+    .np-chip.is-b { background: #111; border-color: #000; color: #fff; }
+    .np-chip.is-b:hover { background: #333; border-color: #000; }
     .np-chip-empty { font-size: 11px; color: var(--dim); font-style: italic; }
     .np-input-row { display: flex; gap: 6px; }
     .np-input-row input[type=text] {
@@ -519,8 +523,21 @@ function refreshNpChips() {
   }
   neighbors.sort((a,b) => a - b).forEach(nb => {
     const chip = document.createElement('span');
-    chip.className = 'np-chip';
+    chip.className = 'np-chip' + (initialBSet.has(nb) ? ' is-b' : '');
     chip.textContent = nb;
+    chip.title = 'Click to remove this edge';
+    chip.addEventListener('click', () => {
+      // Find and remove the edge between npActiveNode and nb
+      const edge = visEdges.get().find(e =>
+        (e.from === npActiveNode && e.to === nb) ||
+        (e.from === nb && e.to === npActiveNode)
+      );
+      if (edge) {
+        visEdges.remove(edge.id);
+        updateInfo();
+        refreshNpChips();
+      }
+    });
     npChips.appendChild(chip);
   });
 }
